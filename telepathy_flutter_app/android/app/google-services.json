@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "527656789078",
+    "project_id": "myblogs-1f4ac",
+    "storage_bucket": "myblogs-1f4ac.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:527656789078:android:0ef8eee13e7e532cb9c7f7",
+        "android_client_info": {
+          "package_name": "com.phonebuddy"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "527656789078-hobharo6v4t8g7b16rddpjivpamdov02.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDGzCtnv_2IeU5ytj8J1rEu14U5ovRITbo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "527656789078-hobharo6v4t8g7b16rddpjivpamdov02.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
