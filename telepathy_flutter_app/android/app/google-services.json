@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "527656789078-qtho3iopss6iqlhb16sgnpitqn0uubkd.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.phonebuddy",
+            "certificate_hash": "f7c371104905641c3a7d183019d65782efbed4aa"
+          }
+        },
+        {
           "client_id": "527656789078-hobharo6v4t8g7b16rddpjivpamdov02.apps.googleusercontent.com",
           "client_type": 3
         }

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../../services/auth_service.dart';
 import '../../state/app_state_controller.dart';
 import '../../state/status_controller.dart';
 
@@ -192,6 +194,101 @@ class SettingsScreen extends StatelessWidget {
                             }
                           },
                     child: const Text('Grant'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 28),
+          Text(
+            'Account',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(24),
+              color: const Color(0xFF1B1F2B),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Consumer<AuthService>(
+                  builder: (context, authService, child) {
+                    final user = authService.currentUser;
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: CircleAvatar(
+                        backgroundColor: const Color(0xFF5E5CE6),
+                        child: user?.photoURL != null
+                            ? ClipOval(
+                                child: Image.network(
+                                  user!.photoURL!,
+                                  width: 40,
+                                  height: 40,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) {
+                                    return const Icon(
+                                      Icons.person_rounded,
+                                      color: Colors.white,
+                                    );
+                                  },
+                                ),
+                              )
+                            : const Icon(
+                                Icons.person_rounded,
+                                color: Colors.white,
+                              ),
+                      ),
+                      title: Text(
+                        user?.displayName ?? 'User',
+                        style: theme.textTheme.titleMedium,
+                      ),
+                      subtitle: Text(
+                        user?.email ?? '',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: Colors.white70,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  onPressed: () async {
+                    final authService = context.read<AuthService>();
+                    try {
+                      // Unpair device before signing out
+                      if (appState.isPaired) {
+                        await statusController.unpair();
+                      }
+                      
+                      await authService.signOut();
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Signed out successfully'),
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Failed to sign out: $e'),
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  icon: const Icon(Icons.logout_rounded),
+                  label: const Text('Sign Out'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red.withOpacity(0.1),
+                    foregroundColor: Colors.red,
                   ),
                 ),
               ],
