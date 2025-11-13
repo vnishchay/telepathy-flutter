@@ -57,6 +57,7 @@ class StatusController extends ChangeNotifier {
   bool get isLoading => _isLoading;
   bool get isConnected => _isConnected;
   String? get errorMessage => _errorMessage;
+  AudioProfile get localProfile => _localProfile;
   AudioProfile get partnerProfile => _partnerProfile;
   DateTime? get lastPartnerUpdate => _lastPartnerUpdate;
   bool get hasPartner => _partnerStatus != null;
@@ -79,11 +80,18 @@ class StatusController extends ChangeNotifier {
 
   void _listenToFcmProfileUpdates() {
     _fcmService.profileUpdates.listen((profileName) {
+      debugPrint('FCM profile update received: $profileName');
       final profile = AudioProfile.values.firstWhere(
         (p) => p.name == profileName,
         orElse: () => AudioProfile.ringing,
       );
-      unawaited(_applyLocalProfile(profile, sync: false));
+      // Only apply if this is a receiver device
+      if (!isRemote && permissionsGranted) {
+        debugPrint('Applying FCM profile update: $profile');
+        unawaited(_applyLocalProfile(profile, sync: false));
+      } else {
+        debugPrint('Skipping FCM profile update: isRemote=$isRemote, permissionsGranted=$permissionsGranted');
+      }
     });
   }
 
@@ -96,12 +104,26 @@ class StatusController extends ChangeNotifier {
   }
 
   Future<bool> requestPolicyPermissions() async {
+    debugPrint('Requesting audio control permissions...');
     final granted = await _audioManager.requestPolicyAccess();
     _permissionsGranted = granted;
     notifyListeners();
-    if (granted && appState.isPaired && !isRemote) {
-      unawaited(_syncLocalStatus());
+    
+    if (granted) {
+      debugPrint('Audio control permission granted!');
+      // Refresh current profile after permission is granted
+      final currentProfile = await _audioManager.getCurrentProfile();
+      _localProfile = currentProfile;
+      notifyListeners();
+      
+      if (appState.isPaired && !isRemote) {
+        debugPrint('Syncing status after permission grant...');
+        unawaited(_syncLocalStatus());
+      }
+    } else {
+      debugPrint('Audio control permission not granted. User needs to enable in settings.');
     }
+    
     return granted;
   }
 
@@ -186,20 +208,38 @@ class StatusController extends ChangeNotifier {
     _setLoading(true);
     try {
       await _ensureFirebase();
-      await appState.setRemoteController(false);
-      await appState.setPairingCode(normalized);
-
+      
       // Wait for authentication before checking room
       await _waitForAuthentication();
-
-      // Check if room exists and has space
+      
+      // Check if room exists and has space BEFORE joining
       final devicesSnapshot = await _service.devicesRef(normalized).get();
       if (devicesSnapshot.docs.isEmpty) {
         throw Exception('Room not found. Please check the code.');
       }
-      if (devicesSnapshot.docs.length >= 2) {
+      
+      // Check if current user's device already exists in room
+      final currentUserId = _authService.currentUser?.uid;
+      if (currentUserId == null) {
+        throw Exception('Authentication required. Please sign in again.');
+      }
+      
+      // Count unique devices (check by deviceId, not by document count)
+      final deviceIds = devicesSnapshot.docs
+          .map((doc) => doc.data()['deviceId'] as String? ?? doc.id)
+          .toSet();
+      
+      // Check if this device is already in the room
+      final deviceIdToUse = _getDeviceId();
+      if (deviceIds.contains(deviceIdToUse)) {
+        // Device already in room, just reconnect
+        debugPrint('Device already in room, reconnecting...');
+      } else if (deviceIds.length >= 2) {
         throw Exception('Room is full. Maximum 2 devices allowed.');
       }
+
+      await appState.setRemoteController(false);
+      await appState.setPairingCode(normalized);
 
       _listenToRoom(normalized);
       await _syncLocalStatus();
@@ -218,9 +258,10 @@ class StatusController extends ChangeNotifier {
     final code = _activePairingCode;
     if (code != null) {
       try {
+        final deviceIdToUse = _getDeviceId();
         await _service.deleteDevice(
           pairingCode: code,
-          deviceId: deviceId,
+          deviceId: deviceIdToUse,
         );
       } catch (error, stackTrace) {
         debugPrint('Failed to delete device status: $error\n$stackTrace');
@@ -315,27 +356,46 @@ class StatusController extends ChangeNotifier {
   void _handleRoomSnapshot(RoomSnapshot snapshot) {
     _isConnected = snapshot.devices.isNotEmpty;
 
-    final local = snapshot.deviceById(deviceId);
+    final deviceIdToUse = _getDeviceId();
+    final local = snapshot.deviceById(deviceIdToUse);
     if (local != null) {
       _localStatusSnapshot = local;
       final previousProfile = _localProfile;
+      final previousPermissions = _permissionsGranted;
+      
       _localProfile = local.profile;
       _permissionsGranted = local.permissionsGranted;
 
+      // If receiver device's profile changed in Firestore, apply it locally
       if (!isRemote &&
           local.profile != previousProfile &&
           !isLoading &&
           permissionsGranted) {
+        debugPrint('Receiver profile changed in Firestore: $previousProfile -> ${local.profile}');
         unawaited(_applyLocalProfile(local.profile, sync: false));
+      }
+      
+      // If permissions were just granted, sync status
+      if (!previousPermissions && _permissionsGranted && !isRemote) {
+        debugPrint('Permissions granted, syncing receiver status');
+        unawaited(_syncLocalStatus());
       }
     }
 
     final partnerRole = isRemote ? DeviceRole.receiver : DeviceRole.remote;
+    final previousPartnerStatus = _partnerStatus;
     _partnerStatus = snapshot.firstWhereRole(
       partnerRole,
-      excluding: deviceId,
+      excluding: deviceIdToUse,
     );
-    _partnerProfile = _partnerStatus?.profile ?? _partnerProfile;
+    
+    // Update partner profile
+    final newPartnerProfile = _partnerStatus?.profile ?? AudioProfile.ringing;
+    if (_partnerProfile != newPartnerProfile) {
+      debugPrint('Partner profile changed: $_partnerProfile -> $newPartnerProfile');
+      _partnerProfile = newPartnerProfile;
+    }
+    
     _lastPartnerUpdate = _partnerStatus?.updatedAt;
     notifyListeners();
   }
@@ -344,8 +404,11 @@ class StatusController extends ChangeNotifier {
     final code = _activePairingCode;
     if (code == null || code.isEmpty) return;
 
+    // Use Firebase Auth UID combined with device ID for uniqueness
+    final deviceIdToUse = _getDeviceId();
+
     final status = DeviceStatus(
-      deviceId: deviceId,
+      deviceId: deviceIdToUse,
       role: isRemote ? DeviceRole.remote : DeviceRole.receiver,
       profile: _localProfile,
       permissionsGranted: _permissionsGranted,
@@ -377,22 +440,44 @@ class StatusController extends ChangeNotifier {
     AudioProfile profile, {
     bool sync = true,
   }) async {
-    if (isRemote) return;
+    if (isRemote) {
+      debugPrint('Skipping profile apply: device is remote controller');
+      return;
+    }
     if (!permissionsGranted) {
+      debugPrint('Cannot apply profile: permissions not granted');
       _setError('Grant Do Not Disturb access to control sound.');
       return;
     }
 
     try {
+      debugPrint('Applying audio profile: $profile');
       await _audioManager.setAudioProfile(profile);
+      
+      // Provide vibration feedback when profile changes (only if not already in that mode)
+      if (_localProfile != profile) {
+        try {
+          await _audioManager.vibrate(duration: 150);
+          debugPrint('Vibration feedback triggered for profile change');
+        } catch (e) {
+          debugPrint('Failed to vibrate: $e');
+          // Don't fail the whole operation if vibration fails
+        }
+      }
+      
+      // Update local profile and notify listeners for UI update
       _localProfile = profile;
+      notifyListeners(); // Ensure UI updates immediately
+      
       if (sync) {
         await _syncLocalStatus();
       }
       _setError(null);
+      debugPrint('Successfully applied audio profile: $profile');
     } catch (error, stackTrace) {
       debugPrint('Failed to apply local profile: $error\n$stackTrace');
       _setError('Unable to update ringer mode.');
+      notifyListeners(); // Notify even on error
     }
   }
 
@@ -441,6 +526,19 @@ class StatusController extends ChangeNotifier {
       debugPrint('Authentication failed: $e');
       throw Exception('Failed to authenticate. Please try again.');
     }
+  }
+
+  /// Get unique device ID combining Firebase Auth UID with device ID
+  /// This ensures each user-device combination has a unique identifier
+  String _getDeviceId() {
+    final authUserId = _authService.currentUser?.uid;
+    if (authUserId != null) {
+      // Use Firebase Auth UID as primary identifier for uniqueness per user
+      // Combine with device ID to handle multiple devices per user if needed
+      return '${authUserId}_$deviceId';
+    }
+    // Fallback to device ID if not authenticated (shouldn't happen)
+    return deviceId;
   }
 
   static String _normalizeCode(String raw) =>

@@ -38,6 +38,14 @@ class AudioManager {
     );
   }
 
+  /// Trigger a short vibration feedback
+  Future<void> vibrate({int duration = 100}) async {
+    await _channel.invokeMethod<void>(
+      'vibrate',
+      <String, dynamic>{'duration': duration},
+    );
+  }
+
   int _modeFromProfile(AudioProfile profile) {
     switch (profile) {
       case AudioProfile.silent:

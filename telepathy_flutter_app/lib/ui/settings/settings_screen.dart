@@ -177,11 +177,11 @@ class SettingsScreen extends StatelessWidget {
                         ? const Color(0xFF64FFDA)
                         : Colors.amberAccent,
                   ),
-                  title: const Text('Do Not Disturb access'),
+                  title: const Text('Audio Control Permission'),
                   subtitle: Text(
                     statusController.permissionsGranted
-                        ? 'Ready to adjust ringer mode when receiving commands.'
-                        : 'Needed if this device is the receiver.',
+                        ? 'Ready to control ring, vibrate, and silent modes remotely.'
+                        : 'Required to allow remote control of ring/vibrate/silent modes. Tap "Grant" to enable.',
                   ),
                   trailing: FilledButton.tonal(
                     onPressed: statusController.permissionsGranted
@@ -190,12 +190,62 @@ class SettingsScreen extends StatelessWidget {
                             final granted =
                                 await statusController.requestPolicyPermissions();
                             if (!granted) {
+                              // Open settings if permission wasn't granted immediately
                               await statusController.openPolicySettings();
+                              // Check again after a delay
+                              await Future.delayed(const Duration(seconds: 1));
+                              final recheck = await statusController.requestPolicyPermissions();
+                              if (recheck && context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Permission granted! Remote control is now enabled.'),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                              }
+                            } else if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Permission granted! Remote control is now enabled.'),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
                             }
                           },
                     child: const Text('Grant'),
                   ),
                 ),
+                if (!statusController.permissionsGranted) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.amber.withOpacity(0.3),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.info_outline_rounded,
+                          color: Colors.amber,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'This permission allows the app to change your phone\'s ringer mode (Ring, Vibrate, Silent) when controlled remotely.',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: Colors.amberAccent,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

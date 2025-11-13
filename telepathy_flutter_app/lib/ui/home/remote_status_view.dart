@@ -62,7 +62,9 @@ class RemoteStatusView extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final status = context.watch<StatusController>();
-    final profile = status.partnerProfile;
+    // For remote: show partner's (receiver's) profile
+    // For receiver: show own profile (which matches what remote sees)
+    final profile = status.isRemote ? status.partnerProfile : status.localProfile;
     final colorPair = _profileGradient(profile);
 
     return Column(
@@ -114,7 +116,7 @@ class RemoteStatusView extends StatelessWidget {
                   ),
                   const Spacer(),
                   Text(
-                    'Paired phone',
+                    status.isRemote ? 'Paired phone' : 'Your phone',
                     style: theme.textTheme.titleMedium?.copyWith(
                       color: Colors.white.withOpacity(0.85),
                     ),
@@ -132,7 +134,7 @@ class RemoteStatusView extends StatelessWidget {
                   Text(
                     status.isRemote
                         ? 'Tap the icon to cycle ring modes'
-                        : 'Awaiting commands from remote controller',
+                        : 'Controlled by remote device',
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: Colors.white.withOpacity(0.85),
                     ),

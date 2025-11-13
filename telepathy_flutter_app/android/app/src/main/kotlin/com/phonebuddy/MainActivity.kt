@@ -4,6 +4,10 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -48,6 +52,11 @@ class MainActivity : FlutterActivity() {
                 }
             }
             "getRingerMode" -> result.success(getRingerMode())
+            "vibrate" -> {
+                val duration = call.argument<Int>("duration") ?: 100
+                vibrate(duration)
+                result.success(null)
+            }
             else -> result.notImplemented()
         }
     }
@@ -94,6 +103,28 @@ class MainActivity : FlutterActivity() {
             AudioManager.RINGER_MODE_SILENT -> MODE_SILENT
             AudioManager.RINGER_MODE_VIBRATE -> MODE_VIBRATE
             else -> MODE_RING
+        }
+    }
+
+    private fun vibrate(durationMillis: Int) {
+        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+            vibratorManager.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            vibrator.vibrate(
+                VibrationEffect.createOneShot(
+                    durationMillis.toLong(),
+                    VibrationEffect.DEFAULT_AMPLITUDE
+                )
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            vibrator.vibrate(durationMillis.toLong())
         }
     }
 }

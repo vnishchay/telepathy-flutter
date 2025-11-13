@@ -50,18 +50,30 @@ class FcmService {
   }
 
   void _handleMessage(RemoteMessage message) {
-    debugPrint('FCM foreground message: ${message.data}');
+    debugPrint('FCM foreground message received');
+    debugPrint('Message data: ${message.data}');
+    debugPrint('Message notification: ${message.notification?.title} - ${message.notification?.body}');
+    
     final profile = message.data['profile'];
     if (profile != null) {
+      debugPrint('Extracted profile from FCM: $profile');
       _profileUpdateController.add(profile);
+    } else {
+      debugPrint('No profile found in FCM message data');
     }
   }
 
   void _handleMessageOpenedApp(RemoteMessage message) {
-    debugPrint('FCM message opened app: ${message.data}');
+    debugPrint('FCM message opened app');
+    debugPrint('Message data: ${message.data}');
+    debugPrint('Message notification: ${message.notification?.title} - ${message.notification?.body}');
+    
     final profile = message.data['profile'];
     if (profile != null) {
+      debugPrint('Extracted profile from FCM: $profile');
       _profileUpdateController.add(profile);
+    } else {
+      debugPrint('No profile found in FCM message data');
     }
   }
 
@@ -76,9 +88,16 @@ class FcmService {
 }
 
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  debugPrint('FCM background message: ${message.data}');
+  debugPrint('FCM background message received');
+  debugPrint('Message data: ${message.data}');
+  debugPrint('Message notification: ${message.notification?.title} - ${message.notification?.body}');
 
   // This handler runs in a separate isolate, so we can't use the FcmService instance
-  // The Android native code handles background audio changes
+  // The Android native code (AudioControlMessagingService) handles background audio changes
   // This is just for logging purposes
+  final profile = message.data['profile'];
+  if (profile != null) {
+    debugPrint('Background FCM message contains profile: $profile');
+    debugPrint('Android native service should handle this automatically');
+  }
 }
