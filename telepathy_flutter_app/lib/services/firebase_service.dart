@@ -203,7 +203,7 @@ class DeviceStatus {
     if (data == null) return null;
 
     return DeviceStatus(
-      deviceId: snapshot.id,
+      deviceId: data['deviceId'] as String? ?? snapshot.id,
       role: _roleFromString(data['role'] as String?),
       profile: _profileFromString(data['profile'] as String?),
       permissionsGranted: data['permissionsGranted'] as bool? ?? false,

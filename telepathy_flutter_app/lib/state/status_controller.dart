@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/audio_profile.dart';
 import '../services/audio_manager.dart';
@@ -228,13 +229,14 @@ class StatusController extends ChangeNotifier {
       final deviceIds = devicesSnapshot.docs
           .map((doc) => doc.data()['deviceId'] as String? ?? doc.id)
           .toSet();
-      
+
       // Check if this device is already in the room
       final deviceIdToUse = _getDeviceId();
       if (deviceIds.contains(deviceIdToUse)) {
         // Device already in room, just reconnect
         debugPrint('Device already in room, reconnecting...');
       } else if (deviceIds.length >= 2) {
+        // Room is full - check if this would exceed capacity
         throw Exception('Room is full. Maximum 2 devices allowed.');
       }
 
@@ -528,16 +530,10 @@ class StatusController extends ChangeNotifier {
     }
   }
 
-  /// Get unique device ID combining Firebase Auth UID with device ID
-  /// This ensures each user-device combination has a unique identifier
+  /// Get unique device ID using only the device ID
+  /// This ensures each physical device can only be in one room at a time
   String _getDeviceId() {
-    final authUserId = _authService.currentUser?.uid;
-    if (authUserId != null) {
-      // Use Firebase Auth UID as primary identifier for uniqueness per user
-      // Combine with device ID to handle multiple devices per user if needed
-      return '${authUserId}_$deviceId';
-    }
-    // Fallback to device ID if not authenticated (shouldn't happen)
+    // Use device ID only to prevent the same device from joining multiple rooms
     return deviceId;
   }
 
