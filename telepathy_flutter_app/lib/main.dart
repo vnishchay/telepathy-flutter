@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 
 import 'app/app_theme.dart';
 import 'firebase_options.dart';
+import 'services/auth_service.dart';
 import 'services/device_identity.dart';
 import 'services/deep_link_service.dart';
 import 'state/app_state_controller.dart';
 import 'state/status_controller.dart';
+import 'ui/auth/login_screen.dart';
 import 'ui/home/home_shell.dart';
 import 'ui/onboarding/onboarding_screen.dart';
 
@@ -18,29 +19,13 @@ Future<void> main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  // Sign in anonymously for Firestore access
-  try {
-    debugPrint('Starting anonymous authentication...');
-    final userCredential = await FirebaseAuth.instance.signInAnonymously();
-    debugPrint('Anonymous auth successful: ${userCredential.user?.uid}');
-
-    // Verify the user is actually authenticated
-    final currentUser = FirebaseAuth.instance.currentUser;
-    if (currentUser != null) {
-      debugPrint('Current user confirmed: ${currentUser.uid}');
-    } else {
-      debugPrint('Warning: No current user after anonymous sign-in');
-    }
-
-    // Listen for auth state changes
-    FirebaseAuth.instance.authStateChanges().listen((User? user) {
-      debugPrint('Auth state changed: ${user?.uid}');
-    });
-  } catch (e) {
-    debugPrint('Anonymous auth failed: $e');
-    debugPrint('Note: Make sure Anonymous Authentication is enabled in Firebase Console');
-    // Continue anyway - room creation doesn't require auth
-  }
+  // Initialize auth service - authentication will happen when needed
+  final authService = AuthService();
+  
+  // Listen for auth state changes
+  authService.authStateChanges.listen((user) {
+    debugPrint('Auth state changed: ${user?.uid ?? 'signed out'}');
+  });
 
   final deviceId = await DeviceIdentity.getOrCreateId();
   final appState = AppStateController();
@@ -52,6 +37,7 @@ Future<void> main() async {
   final statusController = StatusController(
     deviceId: deviceId,
     appState: appState,
+    authService: authService,
   );
   await statusController.initialize();
 
@@ -68,6 +54,7 @@ Future<void> main() async {
       appState: appState,
       statusController: statusController,
       deepLinkService: deepLinkService,
+      authService: authService,
     ),
   );
 }
@@ -78,11 +65,13 @@ class TelepathyApp extends StatelessWidget {
     required this.appState,
     required this.statusController,
     required this.deepLinkService,
+    required this.authService,
   });
 
   final AppStateController appState;
   final StatusController statusController;
   final DeepLinkService deepLinkService;
+  final AuthService authService;
 
   @override
   Widget build(BuildContext context) {
@@ -90,6 +79,7 @@ class TelepathyApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider.value(value: appState),
         ChangeNotifierProvider.value(value: statusController),
+        ChangeNotifierProvider.value(value: authService),
         Provider.value(value: deepLinkService),
       ],
       child: MaterialApp(
@@ -108,11 +98,17 @@ class AppEntryShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppStateController>();
+    final authService = context.watch<AuthService>();
 
     if (!appState.isInitialized) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator.adaptive()),
       );
+    }
+
+    // Check authentication first
+    if (!authService.isAuthenticated) {
+      return const LoginScreen();
     }
 
     if (!appState.onboardingComplete) {

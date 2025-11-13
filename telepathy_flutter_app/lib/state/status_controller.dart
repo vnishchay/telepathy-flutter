@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'dart:math';
 
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
 import '../models/audio_profile.dart';
 import '../services/audio_manager.dart';
+import '../services/auth_service.dart';
 import '../services/fcm_service.dart';
 import '../services/firebase_service.dart';
 import 'app_state_controller.dart';
@@ -14,11 +14,13 @@ class StatusController extends ChangeNotifier {
   StatusController({
     required this.deviceId,
     required this.appState,
+    required AuthService authService,
     FirebaseService? service,
     AudioManager? audioManager,
     FcmService? fcmService,
     Future<void> Function()? ensureFirebase,
-  })  : _service = service ?? FirebaseService(),
+  })  : _authService = authService,
+        _service = service ?? FirebaseService(),
         _audioManager = audioManager ?? AudioManager(),
         _fcmService = fcmService ?? FcmService(),
         _ensureFirebase = ensureFirebase ??
@@ -30,6 +32,7 @@ class StatusController extends ChangeNotifier {
 
   final String deviceId;
   final AppStateController appState;
+  final AuthService _authService;
   final FirebaseService _service;
   final AudioManager _audioManager;
   final FcmService _fcmService;
@@ -120,11 +123,10 @@ class StatusController extends ChangeNotifier {
     _setLoading(true);
     try {
       await _ensureFirebase();
-      try {
-        debugPrint('Auth state: ${FirebaseAuth.instance.currentUser?.uid}');
-      } catch (e) {
-        debugPrint('Auth check failed (expected in tests): $e');
-      }
+      
+      // Ensure user is authenticated before connecting
+      await _waitForAuthentication();
+      
       await appState.setRemoteController(asRemote);
       await appState.setPairingCode(normalized);
       _listenToRoom(normalized);
@@ -147,7 +149,9 @@ class StatusController extends ChangeNotifier {
     try {
       await _ensureFirebase();
 
-      // Room creation doesn't require authentication
+      // Ensure user is authenticated before creating room
+      await _waitForAuthentication();
+
       await appState.setRemoteController(true);
 
       // Generate 14-character secure code
@@ -156,9 +160,6 @@ class StatusController extends ChangeNotifier {
       await appState.setPairingCode(code);
 
       _listenToRoom(code);
-
-      // Wait for authentication before syncing status (device creation requires auth)
-      await _waitForAuthentication();
       await _syncLocalStatus();
 
       _setError(null);
@@ -425,31 +426,21 @@ class StatusController extends ChangeNotifier {
   }
 
   Future<void> _waitForAuthentication() async {
-    // Wait up to 10 seconds for authentication to complete
-    const maxWaitTime = Duration(seconds: 10);
-    final startTime = DateTime.now();
-
-    debugPrint('Waiting for authentication...');
-
-    while (DateTime.now().difference(startTime) < maxWaitTime) {
-      try {
-        final currentUser = FirebaseAuth.instance.currentUser;
-        if (currentUser != null) {
-          debugPrint('Authentication ready: ${currentUser.uid}');
-          return;
-        } else {
-          debugPrint('Still waiting for authentication...');
-        }
-      } catch (e) {
-        debugPrint('Firebase auth check failed: $e');
-        // Firebase not initialized yet, continue waiting
+    try {
+      // Check if already authenticated
+      if (_authService.isAuthenticated) {
+        debugPrint('Already authenticated: ${_authService.currentUser?.uid}');
+        return;
       }
 
-      // Wait 200ms before checking again
-      await Future.delayed(const Duration(milliseconds: 200));
+      // Sign in with Google if not authenticated
+      debugPrint('Not authenticated, signing in with Google...');
+      await _authService.ensureAuthenticated();
+      debugPrint('Authentication successful: ${_authService.currentUser?.uid}');
+    } catch (e) {
+      debugPrint('Authentication failed: $e');
+      throw Exception('Failed to authenticate. Please try again.');
     }
-
-    debugPrint('Warning: Authentication not ready after ${maxWaitTime.inSeconds} seconds, proceeding anyway');
   }
 
   static String _normalizeCode(String raw) =>

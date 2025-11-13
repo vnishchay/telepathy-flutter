@@ -2,18 +2,26 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /rooms/{pairingCode} {
-      // Allow anyone to CREATE a room (solves chicken-and-egg auth problem)
-      allow create: if true;
-
-      // Only authenticated users can read/write existing rooms and devices
-      allow read, update, delete: if request.auth != null;
+      // Require authentication for all operations
+      // Allow authenticated users to create rooms
+      allow create: if request.auth != null;
+      
+      // Allow authenticated users to read room metadata (to check if room exists)
+      // This allows users to verify room existence before joining
+      allow read: if request.auth != null;
+      
+      // Only authenticated users can update/delete rooms
+      allow update, delete: if request.auth != null;
 
       match /devices/{deviceId} {
-        // Allow creating devices without authentication for initial pairing
-        allow create: if true;
-
-        // Only authenticated users can read/write device data
-        allow read, update, delete: if request.auth != null;
+        // Require authentication to create devices
+        allow create: if request.auth != null;
+        
+        // Authenticated users can read device data
+        allow read: if request.auth != null;
+        
+        // Authenticated users can update/delete device data
+        allow update, delete: if request.auth != null;
       }
     }
 
