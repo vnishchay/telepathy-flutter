@@ -1,11 +1,13 @@
 import 'dart:async';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:telepathy_flutter_app/models/audio_profile.dart';
 import 'package:telepathy_flutter_app/services/audio_manager.dart';
+import 'package:telepathy_flutter_app/services/auth_service.dart';
 import 'package:telepathy_flutter_app/services/firebase_service.dart';
 import 'package:telepathy_flutter_app/state/app_state_controller.dart';
 import 'package:telepathy_flutter_app/state/status_controller.dart';
@@ -13,6 +15,10 @@ import 'package:telepathy_flutter_app/state/status_controller.dart';
 class _MockFirebaseService extends Mock implements FirebaseService {}
 
 class _MockAudioManager extends Mock implements AudioManager {}
+
+class _MockAuthService extends Mock implements AuthService {}
+
+class _MockUser extends Mock implements User {}
 
 class _FakeDeviceStatus extends Fake implements DeviceStatus {}
 
@@ -24,6 +30,7 @@ void main() {
 
   late _MockFirebaseService firebaseService;
   late _MockAudioManager audioManager;
+  late _MockAuthService authService;
   late AppStateController appState;
   late StatusController controller;
   late StreamController<RoomSnapshot> roomController;
@@ -33,6 +40,7 @@ void main() {
     return StatusController(
       deviceId: 'DEVICE_A',
       appState: appState,
+      authService: authService,
       service: firebaseService,
       audioManager: audioManager,
       ensureFirebase: () async {},
@@ -46,6 +54,15 @@ void main() {
 
     firebaseService = _MockFirebaseService();
     audioManager = _MockAudioManager();
+    authService = _MockAuthService();
+    final mockUser = _MockUser();
+
+    // Mock auth service
+    when(() => authService.isAuthenticated).thenReturn(true);
+    when(() => authService.currentUser).thenReturn(mockUser);
+    when(() => authService.ensureAuthenticated()).thenAnswer((_) async => mockUser);
+    when(() => mockUser.uid).thenReturn('test-user-uid');
+
     roomController = StreamController<RoomSnapshot>.broadcast();
     lastStatus = null;
 

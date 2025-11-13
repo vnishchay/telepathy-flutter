@@ -5,6 +5,7 @@
 // gestures. You can also use WidgetTester to find child widgets in the widget
 // tree, read text, and verify that the values of widget properties are correct.
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,6 +15,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:telepathy_flutter_app/app/app_theme.dart';
 import 'package:telepathy_flutter_app/models/audio_profile.dart';
 import 'package:telepathy_flutter_app/services/audio_manager.dart';
+import 'package:telepathy_flutter_app/services/auth_service.dart';
 import 'package:telepathy_flutter_app/services/deep_link_service.dart';
 import 'package:telepathy_flutter_app/services/firebase_service.dart';
 import 'package:telepathy_flutter_app/state/app_state_controller.dart';
@@ -23,6 +25,10 @@ import 'package:telepathy_flutter_app/ui/home/home_shell.dart';
 class _MockFirebaseService extends Mock implements FirebaseService {}
 
 class _MockAudioManager extends Mock implements AudioManager {}
+
+class _MockAuthService extends Mock implements AuthService {}
+
+class _MockUser extends Mock implements User {}
 
 class _MockDeepLinkService extends Mock implements DeepLinkService {}
 
@@ -72,10 +78,18 @@ void main() {
   testWidgets('Shows pairing flow once onboarding is complete', (tester) async {
     final firebaseService = _MockFirebaseService();
     final audioManager = _MockAudioManager();
+    final authService = _MockAuthService();
+    final mockUser = _MockUser();
     SharedPreferences.setMockInitialValues({});
     final appState = AppStateController();
     await appState.load();
     await appState.completeOnboarding();
+
+    // Mock auth service
+    when(() => authService.isAuthenticated).thenReturn(true);
+    when(() => authService.currentUser).thenReturn(mockUser);
+    when(() => authService.ensureAuthenticated()).thenAnswer((_) async => mockUser);
+    when(() => mockUser.uid).thenReturn('test-user-uid');
 
     when(
       () => firebaseService.upsertStatus(
@@ -100,6 +114,7 @@ void main() {
     final statusController = StatusController(
       deviceId: 'TEST123',
       appState: appState,
+      authService: authService,
       service: firebaseService,
       audioManager: audioManager,
       ensureFirebase: () async {},
