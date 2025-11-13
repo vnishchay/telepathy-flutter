@@ -1,0 +1,25 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /rooms/{pairingCode} {
+      // Allow anyone to CREATE a room (solves chicken-and-egg auth problem)
+      allow create: if true;
+
+      // Only authenticated users can read/write existing rooms and devices
+      allow read, update, delete: if request.auth != null;
+
+      match /devices/{deviceId} {
+        // Allow creating devices without authentication for initial pairing
+        allow create: if true;
+
+        // Only authenticated users can read/write device data
+        allow read, update, delete: if request.auth != null;
+      }
+    }
+
+    // Allow Cloud Functions to read device data for FCM messaging
+    match /rooms/{pairingCode}/devices/{deviceId} {
+      allow read: if request.auth != null || resource.data.role == 'remote';
+    }
+  }
+}
