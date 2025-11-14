@@ -15,8 +15,6 @@ RELEASE_NOTES="## PhoneBuddy v1.1.0
 - 🔧 **Improved Documentation**: Comprehensive icon setup guides
 
 ### Features
-
-### Features
 - Remote audio profile control (Ring, Vibrate, Silent)
 - Works in background and after device reboot
 - Secure Google Sign-In authentication
