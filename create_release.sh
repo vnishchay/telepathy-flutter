@@ -5,9 +5,16 @@
 set -e
 
 REPO="vnishchay/telepathy-flutter"
-VERSION="v1.0.0"
-APK_PATH="releases/phonebuddy-v1.0.0-release.apk"
-RELEASE_NOTES="## PhoneBuddy v1.0.0
+VERSION="v1.1.0"
+APK_PATH="releases/phonebuddy-v1.1.0-release.apk"
+RELEASE_NOTES="## PhoneBuddy v1.1.0
+
+### What's New
+- 🎨 **New App Icon**: Unique design featuring two connected phones with remote control symbol
+- 📱 **Enhanced Branding**: Updated README with icon and badges
+- 🔧 **Improved Documentation**: Comprehensive icon setup guides
+
+### Features
 
 ### Features
 - Remote audio profile control (Ring, Vibrate, Silent)
