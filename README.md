@@ -1,6 +1,16 @@
 # PhoneBuddy - Remote Audio Control
 
+<div align="center">
+
+![PhoneBuddy Icon](phonebuddy-icon.svg)
+
 **PhoneBuddy** is a Flutter application that allows you to remotely control the audio profile (ring, vibrate, silent) of an Android device from another Android device. Perfect for parents managing kids' phones, meeting management, or finding lost devices.
+
+[![Download APK](https://img.shields.io/badge/Download-APK-brightgreen)](https://github.com/vnishchay/telepathy-flutter/releases)
+[![Android](https://img.shields.io/badge/Android-8.0%2B-blue)](https://www.android.com)
+[![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
+
+</div>
 
 ## 🚀 Quick Start
 
