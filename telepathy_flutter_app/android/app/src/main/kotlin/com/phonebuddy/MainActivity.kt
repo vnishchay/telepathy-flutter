@@ -11,6 +11,7 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.provider.Settings
+import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
@@ -62,6 +63,14 @@ class MainActivity : FlutterActivity() {
             "vibrate" -> {
                 val duration = call.argument<Int>("duration") ?: 100
                 vibrate(duration)
+                result.success(null)
+            }
+            "startForegroundService" -> {
+                startForegroundService()
+                result.success(null)
+            }
+            "stopForegroundService" -> {
+                stopForegroundService()
                 result.success(null)
             }
             else -> result.notImplemented()
@@ -119,6 +128,7 @@ class MainActivity : FlutterActivity() {
                 false // Cannot control DND
             }
         } catch (e: Exception) {
+            Log.e("MainActivity", "Error disabling DND: ${e.message}", e)
             false
         }
     }
@@ -140,6 +150,7 @@ class MainActivity : FlutterActivity() {
                 "unsupported"
             }
         } catch (e: Exception) {
+            Log.e("MainActivity", "Error getting DND status: ${e.message}", e)
             "error"
         }
     }
@@ -193,6 +204,34 @@ class MainActivity : FlutterActivity() {
         } else {
             @Suppress("DEPRECATION")
             vibrator.vibrate(durationMillis.toLong())
+        }
+    }
+
+    private fun startForegroundService() {
+        val serviceIntent = Intent(this, AudioControlService::class.java).apply {
+            action = AudioControlService.ACTION_START_SERVICE
+        }
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent)
+            } else {
+                startService(serviceIntent)
+            }
+            Log.d("MainActivity", "Foreground service started")
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Failed to start foreground service: ${e.message}", e)
+        }
+    }
+
+    private fun stopForegroundService() {
+        val serviceIntent = Intent(this, AudioControlService::class.java).apply {
+            action = AudioControlService.ACTION_STOP_SERVICE
+        }
+        try {
+            stopService(serviceIntent)
+            Log.d("MainActivity", "Foreground service stopped")
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Failed to stop foreground service: ${e.message}", e)
         }
     }
 }

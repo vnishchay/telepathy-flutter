@@ -61,6 +61,16 @@ class AudioManager {
     );
   }
 
+  /// Start the foreground service for background audio control
+  Future<void> startForegroundService() async {
+    await _channel.invokeMethod<void>('startForegroundService');
+  }
+
+  /// Stop the foreground service
+  Future<void> stopForegroundService() async {
+    await _channel.invokeMethod<void>('stopForegroundService');
+  }
+
   int _modeFromProfile(AudioProfile profile) {
     switch (profile) {
       case AudioProfile.silent:

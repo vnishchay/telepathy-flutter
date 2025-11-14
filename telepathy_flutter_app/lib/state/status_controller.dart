@@ -247,6 +247,10 @@ class StatusController extends ChangeNotifier {
 
       _listenToRoom(code);
       await _syncLocalStatus();
+      
+      // Remote devices don't need foreground service (they send commands, not receive)
+      // But we ensure it's stopped if it was running
+      await _audioManager.stopForegroundService();
 
       _setError(null);
       return code;
@@ -312,6 +316,10 @@ class StatusController extends ChangeNotifier {
 
       // Ensure permissions are granted for receiver devices
       await _ensureReceiverPermissions();
+      
+      // Start foreground service for receiver devices to handle background FCM
+      await _audioManager.startForegroundService();
+      debugPrint('Foreground service started for receiver device');
 
       _setError(null);
     } catch (error, stackTrace) {
@@ -325,6 +333,10 @@ class StatusController extends ChangeNotifier {
   }
 
   Future<void> unpair() async {
+    // Stop foreground service when unpairing
+    await _audioManager.stopForegroundService();
+    debugPrint('Foreground service stopped on unpair');
+    
     final code = _activePairingCode;
     if (code != null) {
       try {
@@ -444,11 +456,14 @@ class StatusController extends ChangeNotifier {
       _permissionsGranted = local.permissionsGranted;
 
       // If receiver device's profile changed in Firestore, apply it locally
+      // IMPORTANT: sync: false prevents Firestore update loop - we don't want receiver
+      // updating Firestore when it applies FCM changes, as that would trigger Cloud Function again
       if (!isRemote &&
           local.profile != previousProfile &&
           !isLoading &&
           permissionsGranted) {
         debugPrint('Receiver profile changed in Firestore: $previousProfile -> ${local.profile}');
+        debugPrint('Applying profile change locally without syncing to Firestore');
         unawaited(_applyLocalProfile(local.profile, sync: false));
       }
       
