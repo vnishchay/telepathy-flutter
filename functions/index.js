@@ -101,27 +101,32 @@ exports.sendAudioProfileUpdate = functions.firestore
           return null;
         }
 
-        // Use DATA-ONLY payload for background handling
-        // When notification is included, Android shows notification instead of delivering to app
+        // For Android background message handling, we need BOTH data AND notification
+        // The notification will be silent and not shown to user, but ensures delivery
         const payload = {
           data: {
             profile: newData.profile,
             pairingCode: context.params.pairingCode,
             senderId: remoteDevice,
             type: 'profile_update',
-            // Add timestamp to ensure message is always processed
             timestamp: Date.now().toString(),
           },
-          // NO notification payload - this ensures message is delivered to app/service
+          // Include a silent notification to ensure background delivery on Android
+          notification: {
+            title: 'Audio Control',
+            body: 'Profile update received',
+            // Make it silent by not setting sound
+            android_channel_id: 'silent_channel',
+          },
           android: {
             priority: 'high',
             // Use data message type for background handling
-            data: {
-              profile: newData.profile,
-              pairingCode: context.params.pairingCode,
-              senderId: remoteDevice,
-              type: 'profile_update',
-              timestamp: Date.now().toString(),
+            notification: {
+              channel_id: 'silent_channel',
+              // Silent notification - no sound, no vibration, no lights
+              default_sound: false,
+              default_vibrate_timings: false,
+              default_light_settings: false,
             },
           },
           apns: {
@@ -131,13 +136,15 @@ exports.sendAudioProfileUpdate = functions.firestore
             payload: {
               aps: {
                 'content-available': 1, // Silent notification for iOS
+                sound: '', // No sound
+                badge: 0,
               },
             },
           },
         };
 
         try {
-          console.log('Attempting to send DATA-ONLY FCM to token:', receiverFcmToken.substring(0, 20) + '...');
+          console.log('Attempting to send FCM (with silent notification) to token:', receiverFcmToken.substring(0, 20) + '...');
           // Use send() method with data-only payload for background handling
           const message = {
             token: receiverFcmToken,
