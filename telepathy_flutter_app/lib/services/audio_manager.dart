@@ -13,6 +13,21 @@ class AudioManager {
     return result ?? false;
   }
 
+  Future<bool> requestNotificationPermission() async {
+    final result = await _channel.invokeMethod<bool>('requestNotificationPermission');
+    return result ?? false;
+  }
+
+  Future<bool> disableDoNotDisturb() async {
+    final result = await _channel.invokeMethod<bool>('disableDoNotDisturb');
+    return result ?? false;
+  }
+
+  Future<String> getDoNotDisturbStatus() async {
+    final result = await _channel.invokeMethod<String>('getDoNotDisturbStatus');
+    return result ?? 'unknown';
+  }
+
   Future<bool> requestPolicyAccess() async {
     final granted = await _channel.invokeMethod<bool>('requestPolicyAccess');
     if (granted == true) {

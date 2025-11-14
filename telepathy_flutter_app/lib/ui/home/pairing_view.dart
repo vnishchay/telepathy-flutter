@@ -72,7 +72,60 @@ class _PairingViewState extends State<PairingView>
 
   Future<void> _joinRoom() async {
     FocusScope.of(context).unfocus();
+
+    // If this device is set as receiver, check permissions before joining
+    if (!widget.appState.isRemoteController) {
+      final hasPermissions = await widget.statusController.checkPermissions();
+      if (!hasPermissions) {
+        final shouldGrant = await _showPermissionDialog();
+        if (!shouldGrant) {
+          return; // Don't join if user doesn't want to grant permissions
+        }
+
+        // Request permissions
+        final granted = await widget.statusController.requestPolicyPermissions();
+        if (!granted) {
+          // Show error that permissions are required
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Permission required to join as receiver. Please grant access in Settings.'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+          return;
+        }
+      }
+    }
+
     await widget.statusController.joinRoom(_codeController.text);
+  }
+
+  Future<bool> _showPermissionDialog() async {
+    return await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Permissions Required'),
+          content: const Text(
+            'To receive remote control commands, this device needs permission to change your phone\'s ringer mode (Ring, Vibrate, Silent).\n\n'
+            'This permission is required for the receiver functionality to work properly.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Grant Permission'),
+            ),
+          ],
+        );
+      },
+    ) ?? false;
   }
 
   Future<void> _showCodeOptions(String code) async {

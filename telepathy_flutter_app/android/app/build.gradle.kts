@@ -45,6 +45,8 @@ android {
 dependencies {
     // FCM dependency for messaging service
     implementation("com.google.firebase:firebase-messaging:24.0.1")
+    // Firestore dependency for background updates
+    implementation("com.google.firebase:firebase-firestore:25.0.0")
 }
 
 flutter {

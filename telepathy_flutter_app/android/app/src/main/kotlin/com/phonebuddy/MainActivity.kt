@@ -1,14 +1,18 @@
 package com.phonebuddy
 
+import android.Manifest
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.provider.Settings
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
@@ -30,6 +34,9 @@ class MainActivity : FlutterActivity() {
         when (call.method) {
             "hasPolicyAccess" -> result.success(hasPolicyAccess())
             "requestPolicyAccess" -> result.success(requestPolicyAccess())
+            "requestNotificationPermission" -> result.success(requestNotificationPermission())
+            "disableDoNotDisturb" -> result.success(disableDoNotDisturb())
+            "getDoNotDisturbStatus" -> result.success(getDoNotDisturbStatus())
             "openPolicySettings" -> {
                 openPolicySettings()
                 result.success(null)
@@ -74,6 +81,67 @@ class MainActivity : FlutterActivity() {
         openPolicySettings()
         // We cannot know the result immediately; caller should poll hasPolicyAccess after user action.
         return false
+    }
+
+    private fun requestNotificationPermission(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            // No notification permission needed for Android < 13
+            return true
+        }
+
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+            return true
+        }
+
+        ActivityCompat.requestPermissions(
+            this,
+            arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+            1001 // Request code
+        )
+
+        // We cannot know the result immediately; caller should check again after user action.
+        return false
+    }
+
+    private fun disableDoNotDisturb(): Boolean {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && hasPolicyAccess()) {
+                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                val currentFilter = notificationManager.currentInterruptionFilter
+
+                if (currentFilter != NotificationManager.INTERRUPTION_FILTER_ALL) {
+                    notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
+                    true
+                } else {
+                    true // Already disabled
+                }
+            } else {
+                false // Cannot control DND
+            }
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun getDoNotDisturbStatus(): String {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && hasPolicyAccess()) {
+                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                val currentFilter = notificationManager.currentInterruptionFilter
+
+                when (currentFilter) {
+                    NotificationManager.INTERRUPTION_FILTER_ALL -> "disabled"
+                    NotificationManager.INTERRUPTION_FILTER_NONE -> "alarms_only"
+                    NotificationManager.INTERRUPTION_FILTER_PRIORITY -> "priority_only"
+                    NotificationManager.INTERRUPTION_FILTER_UNKNOWN -> "unknown"
+                    else -> "enabled"
+                }
+            } else {
+                "unsupported"
+            }
+        } catch (e: Exception) {
+            "error"
+        }
     }
 
     private fun openPolicySettings() {

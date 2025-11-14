@@ -1,7 +1,9 @@
 package com.phonebuddy
 
 import android.content.Intent
+import android.preference.PreferenceManager
 import android.util.Log
+import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 
@@ -13,6 +15,12 @@ class AudioControlMessagingService : FirebaseMessagingService() {
 
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
         Log.d(TAG, "From: ${remoteMessage.from}")
+
+        // Initialize Firebase if needed
+        if (FirebaseApp.getApps(this).isEmpty()) {
+            FirebaseApp.initializeApp(this)
+            Log.d(TAG, "Firebase initialized in AudioControlMessagingService")
+        }
 
         // Check if message contains a data payload
         remoteMessage.data.let { data ->
@@ -46,7 +54,7 @@ class AudioControlMessagingService : FirebaseMessagingService() {
     private fun sendRegistrationToServer(token: String) {
         // Store the FCM token in SharedPreferences for later use
         // This will be sent to Firestore when the device connects
-        val prefs = getSharedPreferences("telepathy_prefs", MODE_PRIVATE)
+        val prefs = getDefaultSharedPreferences(this)
         prefs.edit().putString("fcm_token", token).apply()
     }
 }
