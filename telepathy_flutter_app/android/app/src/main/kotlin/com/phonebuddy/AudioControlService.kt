@@ -12,8 +12,13 @@ import android.os.IBinder
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.preference.PreferenceManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import com.google.firebase.FirebaseApp
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
+import java.util.Date
 
 class AudioControlService : Service() {
 
@@ -27,11 +32,20 @@ class AudioControlService : Service() {
 
     private lateinit var audioManager: AudioManager
     private lateinit var notificationManager: NotificationManager
+    private lateinit var firestore: FirebaseFirestore
 
     override fun onCreate() {
         super.onCreate()
+
+        // Initialize Firebase if not already initialized
+        if (FirebaseApp.getApps(this).isEmpty()) {
+            FirebaseApp.initializeApp(this)
+            Log.d(TAG, "Firebase initialized in AudioControlService")
+        }
+
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        firestore = FirebaseFirestore.getInstance()
         createNotificationChannel()
         Log.d(TAG, "AudioControlService created")
     }
@@ -66,6 +80,30 @@ class AudioControlService : Service() {
         }
     }
 
+    private fun disableDoNotDisturb() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && hasNotificationPolicyAccess()) {
+                // Check current interruption filter
+                val currentFilter = notificationManager.currentInterruptionFilter
+                Log.d(TAG, "Current interruption filter: $currentFilter")
+
+                // If DND is active (filter is not ALL), disable it
+                if (currentFilter != NotificationManager.INTERRUPTION_FILTER_ALL) {
+                    notificationManager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
+                    Log.d(TAG, "Disabled Do Not Disturb mode")
+                } else {
+                    Log.d(TAG, "Do Not Disturb already disabled")
+                }
+            } else {
+                Log.d(TAG, "Cannot control DND: API level < M or no notification policy access")
+            }
+        } catch (e: SecurityException) {
+            Log.e(TAG, "SecurityException when disabling DND: ${e.message}", e)
+        } catch (e: Exception) {
+            Log.e(TAG, "Exception when disabling DND: ${e.message}", e)
+        }
+    }
+
     private fun handleAudioProfileChange(profile: String) {
         Log.d(TAG, "Attempting to change audio profile to: $profile")
         
@@ -90,17 +128,24 @@ class AudioControlService : Service() {
         }
 
         try {
+            // Disable Do Not Disturb mode if we're setting to ring or vibrate
+            if (profile.lowercase() in listOf("ringing", "ring", "vibrate", "vibration")) {
+                disableDoNotDisturb()
+            }
+
             val currentMode = audioManager.ringerMode
             Log.d(TAG, "Current ringer mode: $currentMode, Target mode: $ringerMode")
-            
+
             if (currentMode != ringerMode) {
                 audioManager.ringerMode = ringerMode
                 val newMode = audioManager.ringerMode
                 Log.d(TAG, "Successfully changed ringer mode to: $newMode")
-                
+
                 // Verify the change was applied
                 if (newMode == ringerMode) {
                     Log.d(TAG, "Ringer mode change confirmed: $profile")
+                    // Update Firestore with the new profile
+                    updateFirestoreProfile(profile)
                     // Provide vibration feedback to user
                     vibrateFeedback()
                 } else {
@@ -171,5 +216,50 @@ class AudioControlService : Service() {
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
             .build()
+    }
+
+    private fun updateFirestoreProfile(profile: String) {
+        try {
+            // Get pairing info from SharedPreferences
+            val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+            val pairingCode = prefs.getString("pairing_code", null)
+            val deviceId = prefs.getString("device_id", null)
+            val isRemote = prefs.getBoolean("is_remote", false)
+
+            if (pairingCode == null || deviceId == null) {
+                Log.w(TAG, "Cannot update Firestore: pairing info not available")
+                return
+            }
+
+            // Only update if this is a receiver device (not remote controller)
+            if (isRemote) {
+                Log.d(TAG, "Skipping Firestore update: device is remote controller")
+                return
+            }
+
+            Log.d(TAG, "Updating Firestore profile: $profile for device: $deviceId in room: $pairingCode")
+
+            // Create the update data
+            val updateData = hashMapOf<String, Any>(
+                "profile" to profile,
+                "updatedAt" to com.google.firebase.Timestamp.now()
+            )
+
+            // Update the device document in Firestore
+            firestore.collection("rooms")
+                .document(pairingCode)
+                .collection("devices")
+                .document(deviceId)
+                .set(updateData, SetOptions.merge())
+                .addOnSuccessListener {
+                    Log.d(TAG, "Successfully updated Firestore profile: $profile")
+                }
+                .addOnFailureListener { e ->
+                    Log.e(TAG, "Failed to update Firestore profile: ${e.message}", e)
+                }
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Exception updating Firestore profile: ${e.message}", e)
+        }
     }
 }

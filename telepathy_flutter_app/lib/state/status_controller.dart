@@ -102,6 +102,12 @@ class StatusController extends ChangeNotifier {
     _permissionsGranted = granted;
     _localProfile = profile;
     notifyListeners();
+
+    // If this device is configured as a receiver and is paired, ensure permissions
+    if (!appState.isRemoteController && appState.isPaired) {
+      debugPrint('Device is paired receiver, checking permissions...');
+      await _ensureReceiverPermissions();
+    }
   }
 
   Future<bool> requestPolicyPermissions() async {
@@ -109,14 +115,14 @@ class StatusController extends ChangeNotifier {
     final granted = await _audioManager.requestPolicyAccess();
     _permissionsGranted = granted;
     notifyListeners();
-    
+
     if (granted) {
       debugPrint('Audio control permission granted!');
       // Refresh current profile after permission is granted
       final currentProfile = await _audioManager.getCurrentProfile();
       _localProfile = currentProfile;
       notifyListeners();
-      
+
       if (appState.isPaired && !isRemote) {
         debugPrint('Syncing status after permission grant...');
         unawaited(_syncLocalStatus());
@@ -124,12 +130,61 @@ class StatusController extends ChangeNotifier {
     } else {
       debugPrint('Audio control permission not granted. User needs to enable in settings.');
     }
-    
+
     return granted;
+  }
+
+  /// Check if device has required permissions for receiver functionality
+  Future<bool> checkPermissions() async {
+    final hasPolicyAccess = await _audioManager.hasPolicyAccess();
+    return hasPolicyAccess;
+  }
+
+  /// Disable Do Not Disturb mode
+  Future<bool> disableDoNotDisturb() async {
+    try {
+      final result = await _audioManager.disableDoNotDisturb();
+      debugPrint('DND disable result: $result');
+      return result;
+    } catch (e) {
+      debugPrint('Error disabling DND: $e');
+      return false;
+    }
   }
 
   Future<void> openPolicySettings() async {
     await _audioManager.openPolicySettings();
+  }
+
+  /// Ensure receiver device has all required permissions for remote control
+  Future<void> _ensureReceiverPermissions() async {
+    debugPrint('Checking receiver permissions...');
+
+    // Check if we already have the required permissions
+    final hasPolicyAccess = await _audioManager.hasPolicyAccess();
+    final hasNotificationPermission = await _audioManager.requestNotificationPermission();
+
+    if (!hasPolicyAccess) {
+      debugPrint('Receiver device missing audio control permissions. Requesting...');
+
+      // Try to request permissions
+      final granted = await requestPolicyPermissions();
+
+      if (!granted) {
+        debugPrint('Audio control permission not granted for receiver device');
+        _setError('Audio control permission required. Please grant access in Settings to receive remote control commands.');
+      } else {
+        debugPrint('Audio control permission granted for receiver device');
+      }
+    } else {
+      debugPrint('Receiver device has required permissions');
+    }
+
+    // Also ensure notification permission for Android 13+
+    if (!hasNotificationPermission) {
+      debugPrint('Requesting notification permission for receiver device...');
+      await _audioManager.requestNotificationPermission();
+    }
   }
 
   Future<void> connect({
@@ -146,14 +201,21 @@ class StatusController extends ChangeNotifier {
     _setLoading(true);
     try {
       await _ensureFirebase();
-      
+
       // Ensure user is authenticated before connecting
       await _waitForAuthentication();
-      
+
       await appState.setRemoteController(asRemote);
       await appState.setPairingCode(normalized);
+      await _storePairingInfo(normalized);
       _listenToRoom(normalized);
       await _syncLocalStatus();
+
+      // Ensure permissions are granted for receiver devices
+      if (!asRemote) {
+        await _ensureReceiverPermissions();
+      }
+
       _setError(null);
     } catch (error, stackTrace) {
       debugPrint('Failed to connect: $error\n$stackTrace');
@@ -181,6 +243,7 @@ class StatusController extends ChangeNotifier {
       final code = _generateSecureCode();
       debugPrint('Generated room code: $code');
       await appState.setPairingCode(code);
+      await _storePairingInfo(code);
 
       _listenToRoom(code);
       await _syncLocalStatus();
@@ -242,9 +305,14 @@ class StatusController extends ChangeNotifier {
 
       await appState.setRemoteController(false);
       await appState.setPairingCode(normalized);
+      await _storePairingInfo(normalized);
 
       _listenToRoom(normalized);
       await _syncLocalStatus();
+
+      // Ensure permissions are granted for receiver devices
+      await _ensureReceiverPermissions();
+
       _setError(null);
     } catch (error, stackTrace) {
       debugPrint('Failed to join room: $error\n$stackTrace');
@@ -269,6 +337,7 @@ class StatusController extends ChangeNotifier {
         debugPrint('Failed to delete device status: $error\n$stackTrace');
       }
     }
+    await _clearStoredPairingInfo();
     await _teardownSubscription();
     await appState.clearPairing();
     _isConnected = false;
@@ -330,6 +399,12 @@ class StatusController extends ChangeNotifier {
 
     _listenToRoom(normalized);
     unawaited(_syncLocalStatus());
+
+    // If device became a receiver, ensure permissions
+    if (!appState.isRemoteController && roleChanged) {
+      debugPrint('Device role changed to receiver, checking permissions...');
+      unawaited(_ensureReceiverPermissions());
+    }
   }
 
   void _listenToRoom(String pairingCode) {
@@ -454,8 +529,21 @@ class StatusController extends ChangeNotifier {
 
     try {
       debugPrint('Applying audio profile: $profile');
+
+      // Disable Do Not Disturb mode if setting to ring or vibrate
+      if (profile == AudioProfile.ringing || profile == AudioProfile.vibrate) {
+        debugPrint('Disabling Do Not Disturb mode for audible profile');
+        try {
+          await _audioManager.disableDoNotDisturb();
+          debugPrint('Do Not Disturb mode disabled');
+        } catch (e) {
+          debugPrint('Failed to disable DND: $e');
+          // Continue with profile change even if DND disable fails
+        }
+      }
+
       await _audioManager.setAudioProfile(profile);
-      
+
       // Provide vibration feedback when profile changes (only if not already in that mode)
       if (_localProfile != profile) {
         try {
@@ -466,11 +554,11 @@ class StatusController extends ChangeNotifier {
           // Don't fail the whole operation if vibration fails
         }
       }
-      
+
       // Update local profile and notify listeners for UI update
       _localProfile = profile;
       notifyListeners(); // Ensure UI updates immediately
-      
+
       if (sync) {
         await _syncLocalStatus();
       }
@@ -539,4 +627,30 @@ class StatusController extends ChangeNotifier {
 
   static String _normalizeCode(String raw) =>
       raw.trim().toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
+
+  /// Store pairing information in SharedPreferences for background service access
+  Future<void> _storePairingInfo(String pairingCode) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('pairing_code', pairingCode);
+      await prefs.setString('device_id', _getDeviceId());
+      await prefs.setBool('is_remote', isRemote);
+      debugPrint('Stored pairing info for background service: $pairingCode, device: ${_getDeviceId()}, remote: $isRemote');
+    } catch (e) {
+      debugPrint('Failed to store pairing info: $e');
+    }
+  }
+
+  /// Clear pairing information from SharedPreferences
+  Future<void> _clearStoredPairingInfo() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('pairing_code');
+      await prefs.remove('device_id');
+      await prefs.remove('is_remote');
+      debugPrint('Cleared stored pairing info');
+    } catch (e) {
+      debugPrint('Failed to clear pairing info: $e');
+    }
+  }
 }

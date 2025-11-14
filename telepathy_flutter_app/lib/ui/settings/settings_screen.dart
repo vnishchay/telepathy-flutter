@@ -215,6 +215,50 @@ class SettingsScreen extends StatelessWidget {
                     child: const Text('Grant'),
                   ),
                 ),
+                const SizedBox(height: 16),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(
+                    Icons.do_not_disturb_off_rounded,
+                    color: Color(0xFF64FFDA),
+                  ),
+                  title: const Text('Do Not Disturb Control'),
+                  subtitle: const Text(
+                    'Automatically disables Do Not Disturb mode when setting phone to ring or vibrate.',
+                  ),
+                  trailing: FilledButton.tonal(
+                    onPressed: () async {
+                      try {
+                        final disabled = await statusController.disableDoNotDisturb();
+                        if (disabled && context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Do Not Disturb disabled successfully.'),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                        } else if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Failed to disable Do Not Disturb. Check permissions.'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Error: $e'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      }
+                    },
+                    child: const Text('Disable DND'),
+                  ),
+                ),
                 if (!statusController.permissionsGranted) ...[
                   const SizedBox(height: 12),
                   Container(

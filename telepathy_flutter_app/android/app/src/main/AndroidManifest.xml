@@ -54,7 +54,7 @@
         <service
             android:name=".AudioControlMessagingService"
             android:exported="false">
-            <intent-filter android:priority="-500">
+            <intent-filter android:priority="1000">
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>

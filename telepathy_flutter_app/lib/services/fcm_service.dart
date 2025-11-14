@@ -93,11 +93,14 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   debugPrint('Message notification: ${message.notification?.title} - ${message.notification?.body}');
 
   // This handler runs in a separate isolate, so we can't use the FcmService instance
-  // The Android native code (AudioControlMessagingService) handles background audio changes
-  // This is just for logging purposes
+  // But we can still trigger the Android service for audio profile changes
   final profile = message.data['profile'];
   if (profile != null) {
     debugPrint('Background FCM message contains profile: $profile');
     debugPrint('Android native service should handle this automatically');
+
+    // Note: The Android FirebaseMessagingService should handle this, but as a fallback,
+    // we could potentially trigger the Android service from here if needed.
+    // However, since we're in a separate isolate, we can't directly communicate with Android services.
   }
 }
