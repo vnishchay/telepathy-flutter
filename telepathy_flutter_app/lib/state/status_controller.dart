@@ -51,6 +51,7 @@ class StatusController extends ChangeNotifier {
   AudioProfile _partnerProfile = AudioProfile.ringing;
   DeviceStatus? _partnerStatus;
   DeviceStatus? _localStatusSnapshot;
+  DeviceStatus? _lastSyncedStatus;
 
   DateTime? _lastPartnerUpdate;
 
@@ -101,6 +102,7 @@ class StatusController extends ChangeNotifier {
     final profile = await _audioManager.getCurrentProfile();
     _permissionsGranted = granted;
     _localProfile = profile;
+    _lastSyncedStatus = _localStatusSnapshot;
     notifyListeners();
 
     // If this device is configured as a receiver and is paired, ensure permissions
@@ -370,7 +372,8 @@ class StatusController extends ChangeNotifier {
     try {
       await _service.upsertStatus(
         pairingCode: code,
-        status: partner.copyWith(profile: next),
+        status: partner.copyWith(profile: next,
+            updatedBy: _localStatusSnapshot?.deviceId ?? _getDeviceId()),
       );
       _setError(null);
     } catch (error, stackTrace) {
@@ -506,14 +509,22 @@ class StatusController extends ChangeNotifier {
       permissionsGranted: _permissionsGranted,
       updatedAt: DateTime.now(),
       fcmToken: _fcmService.fcmToken,
+      updatedBy: deviceIdToUse,
     );
+
+    if (_lastSyncedStatus != null && _lastSyncedStatus!.isEquivalentTo(status)) {
+      debugPrint('Skipping Firestore sync: status unchanged');
+      return;
+    }
 
     try {
       await _service.upsertStatus(
         pairingCode: code,
         status: status,
       );
+      await _fcmService.markTokenSynced();
       _localStatusSnapshot = status;
+      _lastSyncedStatus = status;
     } catch (error, stackTrace) {
       debugPrint('Failed to sync local status: $error\n$stackTrace');
 

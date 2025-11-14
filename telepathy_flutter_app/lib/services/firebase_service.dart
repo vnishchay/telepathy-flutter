@@ -159,6 +159,7 @@ class DeviceStatus {
     required this.permissionsGranted,
     required this.updatedAt,
     this.fcmToken,
+    this.updatedBy,
   });
 
   final String deviceId;
@@ -167,6 +168,16 @@ class DeviceStatus {
   final bool permissionsGranted;
   final DateTime? updatedAt;
   final String? fcmToken;
+  final String? updatedBy;
+
+  bool isEquivalentTo(DeviceStatus other) {
+    return deviceId == other.deviceId &&
+        role == other.role &&
+        profile == other.profile &&
+        permissionsGranted == other.permissionsGranted &&
+        fcmToken == other.fcmToken &&
+        updatedBy == other.updatedBy;
+  }
 
   DeviceStatus copyWith({
     DeviceRole? role,
@@ -174,6 +185,7 @@ class DeviceStatus {
     bool? permissionsGranted,
     DateTime? updatedAt,
     String? fcmToken,
+    String? updatedBy,
   }) {
     return DeviceStatus(
       deviceId: deviceId,
@@ -182,6 +194,7 @@ class DeviceStatus {
       permissionsGranted: permissionsGranted ?? this.permissionsGranted,
       updatedAt: updatedAt ?? this.updatedAt,
       fcmToken: fcmToken ?? this.fcmToken,
+      updatedBy: updatedBy ?? this.updatedBy,
     );
   }
 
@@ -193,6 +206,7 @@ class DeviceStatus {
       'permissionsGranted': permissionsGranted,
       'updatedAt': FieldValue.serverTimestamp(),
       if (fcmToken != null) 'fcmToken': fcmToken,
+      if (updatedBy != null) 'updatedBy': updatedBy,
     };
   }
 
@@ -209,6 +223,7 @@ class DeviceStatus {
       permissionsGranted: data['permissionsGranted'] as bool? ?? false,
       updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
       fcmToken: data['fcmToken'] as String?,
+      updatedBy: data['updatedBy'] as String?,
     );
   }
 
