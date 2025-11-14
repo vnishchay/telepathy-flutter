@@ -12,7 +12,6 @@ import android.os.IBinder
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
-import android.preference.PreferenceManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.google.firebase.FirebaseApp
@@ -27,6 +26,8 @@ class AudioControlService : Service() {
         private const val CHANNEL_ID = "audio_control_channel"
         private const val NOTIFICATION_ID = 1001
         const val ACTION_SET_AUDIO_PROFILE = "SET_AUDIO_PROFILE"
+        const val ACTION_START_SERVICE = "START_SERVICE"
+        const val ACTION_STOP_SERVICE = "STOP_SERVICE"
         const val EXTRA_PROFILE = "profile"
     }
 
@@ -51,23 +52,45 @@ class AudioControlService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.d(TAG, "=== onStartCommand called ===")
+        Log.d(TAG, "Action: ${intent?.action}")
+        Log.d(TAG, "Flags: $flags, StartId: $startId")
+        
         when (intent?.action) {
+            ACTION_START_SERVICE -> {
+                Log.d(TAG, "Service start requested - keeping service running")
+                startForeground(NOTIFICATION_ID, createNotification())
+                // Store pairing info for later use
+                storePairingInfo()
+            }
+            ACTION_STOP_SERVICE -> {
+                Log.d(TAG, "Service stop requested")
+                stopForeground(true)
+                stopSelf()
+                return START_NOT_STICKY
+            }
             ACTION_SET_AUDIO_PROFILE -> {
                 val profile = intent.getStringExtra(EXTRA_PROFILE)
                 if (profile != null) {
-                    Log.d(TAG, "Received audio profile change request: $profile")
+                    Log.d(TAG, "=== Received audio profile change request: $profile ===")
+                    Log.d(TAG, "Current ringer mode before change: ${audioManager.ringerMode}")
                     handleAudioProfileChange(profile)
+                    Log.d(TAG, "Current ringer mode after change: ${audioManager.ringerMode}")
                 } else {
-                    Log.e(TAG, "Profile extra is null")
+                    Log.e(TAG, "Profile extra is null - cannot process audio change")
                 }
             }
             else -> {
-                Log.d(TAG, "Unknown action: ${intent?.action}")
+                Log.d(TAG, "Unknown action: ${intent?.action}, starting service anyway")
+                startForeground(NOTIFICATION_ID, createNotification())
             }
         }
 
+        // Keep service running even if app is closed
+        // START_STICKY ensures service restarts if killed by system
         startForeground(NOTIFICATION_ID, createNotification())
-        return START_NOT_STICKY
+        Log.d(TAG, "Service running in foreground with START_STICKY")
+        return START_STICKY // Keep service running even if app is closed
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -144,8 +167,8 @@ class AudioControlService : Service() {
                 // Verify the change was applied
                 if (newMode == ringerMode) {
                     Log.d(TAG, "Ringer mode change confirmed: $profile")
-                    // Update Firestore with the new profile
-                    updateFirestoreProfile(profile)
+                    // Don't update Firestore here - it's already updated by the remote device
+                    // Updating from background service causes SecurityException
                     // Provide vibration feedback to user
                     vibrateFeedback()
                 } else {
@@ -218,10 +241,23 @@ class AudioControlService : Service() {
             .build()
     }
 
+    private fun storePairingInfo() {
+        try {
+            val prefs = getSharedPreferences("telepathy_prefs", MODE_PRIVATE)
+            val pairingCode = prefs.getString("pairing_code", null)
+            val deviceId = prefs.getString("device_id", null)
+            val isRemote = prefs.getBoolean("is_remote", false)
+            
+            Log.d(TAG, "Stored pairing info - Code: $pairingCode, Device: $deviceId, Remote: $isRemote")
+        } catch (e: Exception) {
+            Log.e(TAG, "Exception storing pairing info: ${e.message}", e)
+        }
+    }
+
     private fun updateFirestoreProfile(profile: String) {
         try {
             // Get pairing info from SharedPreferences
-            val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+            val prefs = getSharedPreferences("telepathy_prefs", MODE_PRIVATE)
             val pairingCode = prefs.getString("pairing_code", null)
             val deviceId = prefs.getString("device_id", null)
             val isRemote = prefs.getBoolean("is_remote", false)

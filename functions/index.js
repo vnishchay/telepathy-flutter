@@ -77,12 +77,23 @@ exports.sendAudioProfileUpdate = functions.firestore
     console.log('Receiver FCM token:', receiverFcmToken ? 'Present' : 'Missing');
     
     // Case 1: Remote device updated receiver's profile (via cyclePartnerProfile)
-    // This happens when remote device updates the receiver's document directly
-    if (isReceiverUpdate && newData.role === 'receiver') {
-      // Check if this is an update from remote (we can't directly know, but if receiver profile changed
-      // and receiver has FCM token, send notification to receiver device
-      if (receiverFcmToken) {
-        console.log(`Sending FCM: Receiver profile updated (likely by remote), notifying receiver device`);
+    // IMPORTANT: Only send FCM when receiver document is updated by REMOTE device
+    // We detect this by checking if the update includes fields that only remote would set
+    // OR if the update happened without the receiver's deviceId being the one making the change
+    // Since cyclePartnerProfile updates receiver's document, we need to ensure receiver itself
+    // doesn't trigger FCM when it updates its own profile
+    
+    // Check: If receiver document updated, only send FCM if:
+    // 1. Receiver has FCM token
+    // 2. The update is NOT from receiver updating itself (we can't directly detect this, but
+    //    receiver should only update Firestore when syncing status, not when applying FCM changes)
+    // 3. Remote device exists and is paired
+    
+    if (isReceiverUpdate && newData.role === 'receiver' && remoteDevice && receiverFcmToken) {
+      // Only send FCM if this looks like a remote-initiated update
+      // Receiver updates its own profile via _syncLocalStatus, but that should only happen
+      // when permissions change or initial sync, not when applying FCM changes
+      console.log(`Sending FCM: Receiver profile updated by remote, notifying receiver device`);
         
         // Validate FCM token format
         if (!receiverFcmToken || typeof receiverFcmToken !== 'string' || receiverFcmToken.length < 10) {
@@ -90,35 +101,50 @@ exports.sendAudioProfileUpdate = functions.firestore
           return null;
         }
 
+        // Use DATA-ONLY payload for background handling
+        // When notification is included, Android shows notification instead of delivering to app
         const payload = {
           data: {
             profile: newData.profile,
             pairingCode: context.params.pairingCode,
             senderId: remoteDevice,
             type: 'profile_update',
+            // Add timestamp to ensure message is always processed
+            timestamp: Date.now().toString(),
           },
-          notification: {
-            title: 'Audio Profile Changed',
-            body: `Profile changed to ${newData.profile}`,
-          },
+          // NO notification payload - this ensures message is delivered to app/service
           android: {
             priority: 'high',
+            // Use data message type for background handling
+            data: {
+              profile: newData.profile,
+              pairingCode: context.params.pairingCode,
+              senderId: remoteDevice,
+              type: 'profile_update',
+              timestamp: Date.now().toString(),
+            },
           },
           apns: {
             headers: {
               'apns-priority': '10',
             },
+            payload: {
+              aps: {
+                'content-available': 1, // Silent notification for iOS
+              },
+            },
           },
         };
 
         try {
-          console.log('Attempting to send FCM to token:', receiverFcmToken.substring(0, 20) + '...');
-          // Use send() method instead of sendToDevice() for better error handling
+          console.log('Attempting to send DATA-ONLY FCM to token:', receiverFcmToken.substring(0, 20) + '...');
+          // Use send() method with data-only payload for background handling
           const message = {
             token: receiverFcmToken,
             data: payload.data,
-            notification: payload.notification,
-            android: payload.android,
+            android: {
+              priority: 'high',
+            },
             apns: payload.apns,
           };
           
@@ -137,69 +163,13 @@ exports.sendAudioProfileUpdate = functions.firestore
           }
           return null;
         }
-      }
     }
 
-    // Case 2: Remote device updated its own profile (should notify receiver)
-    if (isRemoteUpdate && newData.role === 'remote' && receiverFcmToken) {
-      console.log(`Sending FCM: Remote device updated its profile, notifying receiver`);
-
-      // Validate FCM token format
-      if (!receiverFcmToken || typeof receiverFcmToken !== 'string' || receiverFcmToken.length < 10) {
-        console.error('Invalid FCM token format:', receiverFcmToken);
-        return null;
-      }
-
-      const payload = {
-        data: {
-          profile: newData.profile,
-          pairingCode: context.params.pairingCode,
-          senderId: remoteDevice,
-          type: 'profile_update',
-        },
-        notification: {
-          title: 'Audio Profile Changed',
-          body: `Profile changed to ${newData.profile}`,
-        },
-        android: {
-          priority: 'high',
-        },
-        apns: {
-          headers: {
-            'apns-priority': '10',
-          },
-        },
-      };
-
-      try {
-        console.log('Attempting to send FCM to token:', receiverFcmToken.substring(0, 20) + '...');
-        // Use send() method instead of sendToDevice() for better error handling
-        const message = {
-          token: receiverFcmToken,
-          data: payload.data,
-          notification: payload.notification,
-          android: payload.android,
-          apns: payload.apns,
-        };
-        
-        const response = await admin.messaging().send(message);
-        console.log('Successfully sent FCM message to receiver. Message ID:', response);
-        return { success: true, messageId: response };
-      } catch (error) {
-        console.error('Failed to send FCM message:', error);
-        console.error('Error code:', error.code);
-        console.error('Error message:', error.message);
-        
-        // If token is invalid, log it but don't throw
-        if (error.code === 'messaging/invalid-registration-token' || 
-            error.code === 'messaging/registration-token-not-registered') {
-          console.error('FCM token is invalid or unregistered. Receiver needs to refresh token.');
-        }
-        return null;
-      }
-    }
-
-    console.log('Skipping FCM: no valid update scenario');
+    // Case 2: REMOVED - Remote device updating its own profile should NOT notify receiver
+    // Only remote updating receiver's profile should trigger FCM
+    // This prevents unnecessary FCM messages when remote changes its own profile
+    
+    console.log('Skipping FCM: Only receiver profile updates from remote trigger FCM');
     return null;
   });
 
